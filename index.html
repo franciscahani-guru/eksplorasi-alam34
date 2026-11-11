@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jurnal Eksplorasi & Pengamatan Alam SD - Fase B Kurikulum Merdeka</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Firebase Standard Scripts for HTML (v11.6.1) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration (Uses environment variables or default fallback)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "demo-api-key",
+                authDomain: "demo-app.firebaseapp.com",
+                projectId: "demo-app",
+                storageBucket: "demo-app.appspot.com",
+                messagingSenderId: "123456789",
+                appId: "1:123456789:web:demo"
+            };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'jurnal-eksplorasi-sd';
+
+        // Expose Firebase services globally for UI functions
+        window.fbApp = app;
+        window.fbAuth = auth;
+        window.fbDb = db;
+        window.appId = appId;
+        window.fbCollectionPath = ['artifacts', appId, 'public', 'data', 'jurnal_eksplorasi'];
+
+        // Initialize Authentication before Firestore Operations (RULE 3)
+        window.initFirebase = async function() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                console.log("Firebase Auth Connected: ", auth.currentUser?.uid);
+                window.listenToCloudJurnals();
+            } catch (err) {
+                console.warn("Firebase auth warning (falling back to offline mode):", err);
+            }
+        };
+
+        // Save Journal Entry to Firestore (RULE 1 & 2)
+        window.saveJournalToCloud = async function(journalData) {
+            if (!auth.currentUser) {
+                try {
+                    await signInAnonymously(auth);
+                } catch(e) {
+                    console.error("Auth failed:", e);
+                }
+            }
+            if (!auth.currentUser) return false;
+
+            const docId = journalData.id || ('jurnal_' + Date.now());
+            journalData.id = docId;
+            journalData.updatedAt = new Date().toISOString();
+            journalData.userId = auth.currentUser.uid;
+
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'jurnal_eksplorasi', docId);
+                await setDoc(docRef, journalData, { merge: true });
+                return docId;
+            } catch (error) {
+                console.error("Error saving to Firestore:", error);
+                return false;
+            }
+        };
+
+        // Listen for Realtime Cloud Submissions for Teacher Dashboard
+        window.listenToCloudJurnals = function() {
+            if (!auth.currentUser) return;
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'jurnal_eksplorasi');
+            
+            onSnapshot(colRef, (snapshot) => {
+                const list = [];
+                snapshot.forEach((docSnap) => {
+                    list.push(docSnap.data());
+                });
+                window.renderTeacherDashboard(list);
+            }, (error) => {
+                console.error("Firestore onSnapshot error:", error);
+            });
+        };
+
+        window.initFirebase();
+    </script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        },
+                        tealbrand: {
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Print Styling to guarantee perfect A4 printable sheets */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                font-size: 11pt;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+            .print-card {
+                border: 1px solid #cbd5e1 !important;
+                box-shadow: none !important;
+                margin-bottom: 1rem !important;
+                break-inside: avoid;
+            }
+            input, textarea, select {
+                border: none !important;
+                border-bottom: 1px dashed #64748b !important;
+                background: transparent !important;
+                padding: 2px 0 !important;
+                resize: none !important;
+            }
+            canvas {
+                border: 1px solid #94a3b8 !important;
+            }
+            .print-header {
+                display: block !important;
+            }
+            .rating-star {
+                color: #000 !important;
+            }
+        }
+
+        /* Interactive Canvas Styling */
+        .canvas-container {
+            touch-action: none;
+        }
+
+        /* Star Rating UI */
+        .star-rating i {
+            cursor: pointer;
+            transition: transform 0.15s ease, color 0.15s ease;
+        }
+        .star-rating i:hover {
+            transform: scale(1.25);
+        }
+    </style>
+</head>
+<body class="bg-emerald-50/40 text-slate-800 font-sans min-h-screen pb-16">
+
+    <!-- Top Sticky Header / Action Bar (Hidden on Print) -->
+    <header class="no-print sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-emerald-100 shadow-sm">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="bg-emerald-600 text-white p-2.5 rounded-xl shadow-md shadow-emerald-600/20">
+                    <i class="fa-solid fa-leaf text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-800 leading-tight">Jurnal Eksplorasi Alam SD</h1>
+                    <p class="text-xs font-semibold text-emerald-600">IPAS Fase B (Kelas 3 & 4) - Kurikulum Merdeka</p>
+                </div>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="saveData(true)" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Simpan ke Cloud
+                </button>
+                <button onclick="openDashboardModal()" class="px-3 py-2 bg-teal-100 hover:bg-teal-200 text-teal-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-chalkboard-user"></i> Dashboard Guru
+                </button>
+                <button onclick="window.print()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-print"></i> Cetak / PDF
+                </button>
+                <button onclick="exportWordDoc()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-file-word"></i> Ekspor Word
+                </button>
+                <button onclick="resetForm()" class="px-3 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate-left"></i> Reset
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Modal Dashboard Guru (Teacher Overview) -->
+    <div id="teacherDashboardModal" class="no-print fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div class="bg-emerald-700 text-white p-4 px-6 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-chalkboard-user text-xl"></i>
+                    <div>
+                        <h3 class="font-bold text-base">Dashboard Guru: Data Jurnal Siswa</h3>
+                        <p class="text-xs text-emerald-200">Riwayat pengamatan rantai makanan yang tersimpan di Cloud Firebase</p>
+                    </div>
+                </div>
+                <button onclick="closeDashboardModal()" class="text-white/80 hover:text-white text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto flex-1 space-y-4">
+                <div class="flex items-center justify-between text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <span>Total Jurnal Masuk: <b id="totalSubmissionCount" class="text-slate-800">0</b></span>
+                    <span class="flex items-center gap-1 text-emerald-600 font-semibold">
+                        <i class="fa-solid fa-wifi"></i> Terkoneksi ke Cloud Realtime
+                    </span>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                <th class="p-3">Nama Kelompok</th>
+                                <th class="p-3">Kelas / Fase</th>
+                                <th class="p-3">Anggota</th>
+                                <th class="p-3">Waktu Diperbarui</th>
+                                <th class="p-3 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="teacherDashboardList" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="5" class="p-4 text-center text-slate-400">Belum ada data jurnal tersimpan di Cloud. Siswa dapat menekan tombol "Simpan ke Cloud".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-slate-50 p-4 border-t border-slate-200 text-right">
+                <button onclick="closeDashboardModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="max-w-5xl mx-auto px-4 pt-6 space-y-6">
+
+        <!-- Banner Title Section -->
+        <div class="print-card bg-white border border-emerald-100 rounded-2xl p-6 shadow-sm relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-100/50 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
+                <div>
+                    <span class="inline-block px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full mb-2">LEMBAR KERJA PESERTA DIDIK (LKPD)</span>
+                    <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Jurnal Eksplorasi & Pengamatan Ekosistem Sekolah</h2>
+                    <p class="text-sm text-slate-500 mt-1">Pembelajaran Berbasis Proyek (PBL) - Pengamatan Rantai Makanan & Lingkungan Lokal</p>
+                </div>
+                <div class="text-right no-print">
+                    <span id="save-status" class="text-xs font-medium text-slate-400 flex items-center justify-end gap-1">
+                        <i class="fa-solid fa-circle-check text-emerald-500"></i> Otomatis Tersimpan
+                    </span>
+                </div>
+            </div>
+
+            <!-- SECTION 1: Informasi Kelompok & Kelas -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Kelompok</label>
+                    <input type="text" id="namaKelompok" placeholder="Contoh: Kelompok Harimau" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500 font-semibold text-emerald-900">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Kelas / Fase</label>
+                    <input type="text" id="kelasFase" value="Kelas 4 / Fase B" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Tanggal Pengamatan</label>
+                    <input type="date" id="tanggalPengamatan" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Anggota Kelompok</label>
+                    <input type="text" id="anggotaKelompok" placeholder="1. Ani, 2. Budi, 3. Cici, 4. Doni" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Lokasi Pengamatan di Sekolah</label>
+                    <input type="text" id="lokasiPengamatan" placeholder="Contoh: Taman Depan Perpustakaan" class="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: Checklist Komponen Ekosistem -->
+        <div class="print-card bg-white border border-emerald-100 rounded-2xl p-6 shadow-sm space-y-6">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-7 h-7 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-sm">1</div>
+                    <h3 class="text-base font-bold text-slate-800">Tabel Checklist Komponen Ekosistem Sekolah</h3>
+                </div>
+                <p class="text-xs text-slate-500 ml-9">Jelajahi area pengamatan. Amati dan catat komponen biotik dan abiotik yang kalian temukan.</p>
+            </div>
+
+            <!-- Biotik Table -->
+            <div>
+                <h4 class="text-xs font-bold text-emerald-800 uppercase bg-emerald-50 px-3 py-1.5 rounded-lg inline-block mb-3">
+                    <i class="fa-solid fa-bug text-emerald-600 mr-1"></i> A. Komponen Biotik (Makhluk Hidup)
+                </h4>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <tr>
+                                <th class="p-2.5 text-center w-12">Ada?</th>
+                                <th class="p-2.5">Nama Makhluk Hidup</th>
+                                <th class="p-2.5 w-24">Jumlah</th>
+                                <th class="p-2.5">Tempat / Posisi Ditemukan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="biotikTableBody" class="divide-y divide-slate-100">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Abiotik Table -->
+            <div>
+                <h4 class="text-xs font-bold text-teal-800 uppercase bg-teal-50 px-3 py-1.5 rounded-lg inline-block mb-3">
+                    <i class="fa-solid fa-sun text-teal-600 mr-1"></i> B. Komponen Abiotik (Benda Tak Hidup)
+                </h4>
+                <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <tr>
+                                <th class="p-2.5 text-center w-12">Ada?</th>
+                                <th class="p-2.5">Nama Benda Tak Hidup</th>
+                                <th class="p-2.5">Kondisi (Panas/Basah/Sejuk)</th>
+                                <th class="p-2.5">Catatan Pengamatan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="abiotikTableBody" class="divide-y divide-slate-100">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 3: Ruang Sketsa & Foto Organisme -->
+        <div class="print-card bg-white border border-emerald-100 rounded-2xl p-6 shadow-sm space-y-4 page-break">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-7 h-7 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-sm">2</div>
+                    <h3 class="text-base font-bold text-slate-800">Ruang Sketsa & Dokumen Foto Organisme</h3>
+                </div>
+                <p class="text-xs text-slate-500 ml-9">Pilih 2 makhluk hidup menarik. Anda dapat **menggambar sketsa** atau **mengambil foto langsung menggunakan kamera HP**.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                
+                <!-- Organisme 1 -->
+                <div class="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-md">Organisme 1</span>
+                        
+                        <!-- Toggle Mode: Gambar atau Foto -->
+                        <div class="no-print flex items-center bg-slate-200 p-0.5 rounded-lg text-xs">
+                            <button type="button" onclick="switchMediaMode(1, 'draw')" id="btnDrawMode1" class="px-2 py-1 rounded-md font-bold bg-white text-emerald-800 shadow-sm">
+                                <i class="fa-solid fa-pen-nib"></i> Sketsa
+                            </button>
+                            <button type="button" onclick="switchMediaMode(1, 'photo')" id="btnPhotoMode1" class="px-2 py-1 rounded-md font-bold text-slate-600">
+                                <i class="fa-solid fa-camera"></i> Foto HP
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mode Sketsa Canvas -->
+                    <div id="drawContainer1" class="space-y-2">
+                        <div class="no-print flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-1.5">
+                                <input type="color" id="color1" value="#16a34a" title="Pilih Warna" class="w-7 h-7 rounded cursor-pointer border-none bg-transparent">
+                                <input type="range" id="size1" min="1" max="15" value="3" title="Ukuran Kuas" class="w-16 accent-emerald-600">
+                            </div>
+                            <button type="button" onclick="clearCanvas(1)" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-bold transition">
+                                <i class="fa-solid fa-eraser"></i> Bersihkan
+                            </button>
+                        </div>
+                        <div class="canvas-container bg-white border border-slate-300 rounded-lg overflow-hidden shadow-inner">
+                            <canvas id="canvas1" width="400" height="220" class="w-full h-52 cursor-crosshair bg-white"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Mode Kamera / Upload Foto -->
+                    <div id="photoContainer1" class="hidden space-y-2">
+                        <div class="no-print flex items-center justify-between">
+                            <label for="cameraInput1" class="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                                <i class="fa-solid fa-camera"></i> Ambil Foto / Upload
+                            </label>
+                            <input type="file" id="cameraInput1" accept="image/*" capture="environment" onchange="handlePhotoUpload(1, event)" class="hidden">
+                            <button type="button" onclick="clearPhoto(1)" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded text-xs font-bold transition">
+                                Hapus Foto
+                            </button>
+                        </div>
+                        <div class="h-52 bg-slate-100 border border-slate-300 rounded-lg overflow-hidden flex items-center justify-center relative">
+                            <img id="photoPreview1" class="hidden max-h-full max-w-full object-contain" alt="Foto Organisme 1">
+                            <span id="photoPlaceholder1" class="text-xs text-slate-400 text-center px-4">
+                                <i class="fa-solid fa-image text-3xl block mb-1 text-slate-300"></i>
+                                Klik "Ambil Foto" untuk menggunakan kamera HP.
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2 pt-1">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Nama Organisme:</label>
+                            <input type="text" id="namaOrg1" placeholder="Misal: Belalang Hijau" class="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Peran dalam Ekosistem:</label>
+                            <select id="peranOrg1" class="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                                <option value="Produsen (Pembuat Makanan)">Produsen (Pembuat Makanan)</option>
+                                <option value="Konsumen I (Pemakan Tumbuhan)" selected>Konsumen I (Pemakan Tumbuhan)</option>
+                                <option value="Konsumen II (Pemakan Daging)">Konsumen II (Pemakan Daging)</option>
+                                <option value="Pengurai (Pengurai Sisa)">Pengurai (Pengurai Sisa)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Organisme 2 -->
+                <div class="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-xs font-bold text-teal-800 bg-teal-100 px-2.5 py-1 rounded-md">Organisme 2</span>
+                        
+                        <!-- Toggle Mode: Gambar atau Foto -->
+                        <div class="no-print flex items-center bg-slate-200 p-0.5 rounded-lg text-xs">
+                            <button type="button" onclick="switchMediaMode(2, 'draw')" id="btnDrawMode2" class="px-2 py-1 rounded-md font-bold bg-white text-teal-800 shadow-sm">
+                                <i class="fa-solid fa-pen-nib"></i> Sketsa
+                            </button>
+                            <button type="button" onclick="switchMediaMode(2, 'photo')" id="btnPhotoMode2" class="px-2 py-1 rounded-md font-bold text-slate-600">
+                                <i class="fa-solid fa-camera"></i> Foto HP
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mode Sketsa Canvas -->
+                    <div id="drawContainer2" class="space-y-2">
+                        <div class="no-print flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-1.5">
+                                <input type="color" id="color2" value="#0284c7" title="Pilih Warna" class="w-7 h-7 rounded cursor-pointer border-none bg-transparent">
+                                <input type="range" id="size2" min="1" max="15" value="3" title="Ukuran Kuas" class="w-16 accent-teal-600">
+                            </div>
+                            <button type="button" onclick="clearCanvas(2)" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs font-bold transition">
+                                <i class="fa-solid fa-eraser"></i> Bersihkan
+                            </button>
+                        </div>
+                        <div class="canvas-container bg-white border border-slate-300 rounded-lg overflow-hidden shadow-inner">
+                            <canvas id="canvas2" width="400" height="220" class="w-full h-52 cursor-crosshair bg-white"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Mode Kamera / Upload Foto -->
+                    <div id="photoContainer2" class="hidden space-y-2">
+                        <div class="no-print flex items-center justify-between">
+                            <label for="cameraInput2" class="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                                <i class="fa-solid fa-camera"></i> Ambil Foto / Upload
+                            </label>
+                            <input type="file" id="cameraInput2" accept="image/*" capture="environment" onchange="handlePhotoUpload(2, event)" class="hidden">
+                            <button type="button" onclick="clearPhoto(2)" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded text-xs font-bold transition">
+                                Hapus Foto
+                            </button>
+                        </div>
+                        <div class="h-52 bg-slate-100 border border-slate-300 rounded-lg overflow-hidden flex items-center justify-center relative">
+                            <img id="photoPreview2" class="hidden max-h-full max-w-full object-contain" alt="Foto Organisme 2">
+                            <span id="photoPlaceholder2" class="text-xs text-slate-400 text-center px-4">
+                                <i class="fa-solid fa-image text-3xl block mb-1 text-slate-300"></i>
+                                Klik "Ambil Foto" untuk menggunakan kamera HP.
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2 pt-1">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Nama Organisme:</label>
+                            <input type="text" id="namaOrg2" placeholder="Misal: Burung Pipit" class="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Peran dalam Ekosistem:</label>
+                            <select id="peranOrg2" class="w-full px-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-500">
+                                <option value="Produsen (Pembuat Makanan)">Produsen (Pembuat Makanan)</option>
+                                <option value="Konsumen I (Pemakan Tumbuhan)">Konsumen I (Pemakan Tumbuhan)</option>
+                                <option value="Konsumen II (Pemakan Daging)" selected>Konsumen II (Pemakan Daging)</option>
+                                <option value="Pengurai (Pengurai Sisa)">Pengurai (Pengurai Sisa)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- SECTION 4: Interactive Mind Map & Rantai Makanan Builder -->
+        <div class="print-card bg-white border border-emerald-100 rounded-2xl p-6 shadow-sm space-y-6">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-7 h-7 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-sm">3</div>
+                    <h3 class="text-base font-bold text-slate-800">Skema Rantai Makanan Ekosistem Sekolah</h3>
+                </div>
+                <p class="text-xs text-slate-500 ml-9">Susun urutan aliran energi rantai makanan sesuai hasil pengamatan kelompokmu.</p>
+            </div>
+
+            <!-- Chain Visual Connector -->
+            <div class="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 overflow-x-auto">
+                <div class="flex items-center justify-between min-w-[650px] gap-2">
+                    
+                    <!-- Step 0: Matahari -->
+                    <div class="flex-1 bg-amber-100 border border-amber-300 rounded-xl p-3 text-center shadow-sm">
+                        <i class="fa-solid fa-sun text-2xl text-amber-500 mb-1"></i>
+                        <span class="block text-xs font-extrabold text-amber-900 uppercase">Energi Utama</span>
+                        <input type="text" id="chainSun" value="Matahari" class="mt-1 text-xs font-bold text-center w-full bg-white/80 rounded border-none py-1">
+                    </div>
+
+                    <div class="text-emerald-500 font-extrabold text-xl"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Step 1: Produsen -->
+                    <div class="flex-1 bg-emerald-100 border border-emerald-300 rounded-xl p-3 text-center shadow-sm">
+                        <i class="fa-solid fa-seedling text-2xl text-emerald-600 mb-1"></i>
+                        <span class="block text-xs font-extrabold text-emerald-900 uppercase">Produsen</span>
+                        <input type="text" id="chainProd" value="Rumput Hijau" placeholder="Nama Produsen" class="mt-1 text-xs font-bold text-center w-full bg-white/80 rounded border border-emerald-200 py-1">
+                    </div>
+
+                    <div class="text-emerald-500 font-extrabold text-xl"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Step 2: Konsumen I -->
+                    <div class="flex-1 bg-blue-100 border border-blue-300 rounded-xl p-3 text-center shadow-sm">
+                        <i class="fa-solid fa-locust text-2xl text-blue-600 mb-1"></i>
+                        <span class="block text-xs font-extrabold text-blue-900 uppercase">Konsumen I</span>
+                        <input type="text" id="chainCons1" value="Belalang" placeholder="Pemakan Tumbuhan" class="mt-1 text-xs font-bold text-center w-full bg-white/80 rounded border border-blue-200 py-1">
+                    </div>
+
+                    <div class="text-emerald-500 font-extrabold text-xl"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Step 3: Konsumen II -->
+                    <div class="flex-1 bg-purple-100 border border-purple-300 rounded-xl p-3 text-center shadow-sm">
+                        <i class="fa-solid fa-crow text-2xl text-purple-600 mb-1"></i>
+                        <span class="block text-xs font-extrabold text-purple-900 uppercase">Konsumen II</span>
+                        <input type="text" id="chainCons2" value="Burung Pipit" placeholder="Pemakan Daging" class="mt-1 text-xs font-bold text-center w-full bg-white/80 rounded border border-purple-200 py-1">
+                    </div>
+
+                    <div class="text-emerald-500 font-extrabold text-xl"><i class="fa-solid fa-arrow-right"></i></div>
+
+                    <!-- Step 4: Pengurai -->
+                    <div class="flex-1 bg-stone-100 border border-stone-300 rounded-xl p-3 text-center shadow-sm">
+                        <i class="fa-solid fa-worm text-2xl text-stone-600 mb-1"></i>
+                        <span class="block text-xs font-extrabold text-stone-900 uppercase">Pengurai</span>
+                        <input type="text" id="chainDecomp" value="Cacing Tanah" placeholder="Pengurai Sisa" class="mt-1 text-xs font-bold text-center w-full bg-white/80 rounded border border-stone-200 py-1">
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Pertanyaan Diskusi -->
+            <div class="space-y-4 pt-2">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                        Pertanyaan 1: Apa yang terjadi pada kehidupan hewan jika semua rumput dan tumbuhan di taman sekolah habis?
+                    </label>
+                    <textarea id="diskusi1" rows="3" placeholder="Tuliskan analisis kelompokmu di sini..." class="w-full p-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                        Pertanyaan 2: Mengapa komponen pengurai (seperti cacing tanah & bakteri) sangat penting bagi kelangsungan tanah taman sekolah?
+                    </label>
+                    <textarea id="diskusi2" rows="3" placeholder="Tuliskan analisis kelompokmu di sini..." class="w-full p-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 5: Kesimpulan & Rubrik Refleksi -->
+        <div class="print-card bg-white border border-emerald-100 rounded-2xl p-6 shadow-sm space-y-6">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <div class="w-7 h-7 bg-emerald-100 text-emerald-700 rounded-lg flex items-center justify-center font-bold text-sm">4</div>
+                    <h3 class="text-base font-bold text-slate-800">Kesimpulan & Refleksi Kelompok</h3>
+                </div>
+            </div>
+
+            <!-- Kesimpulan -->
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Kesimpulan Utama Pengamatan</label>
+                <textarea id="kesimpulanUtama" rows="3" placeholder="Tuliskan kesimpulan akhir proyek eksplorasi ini..." class="w-full p-3 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500"></textarea>
+            </div>
+
+            <!-- Refleksi Interactive Rating -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-slate-100">
+                
+                <!-- Rating 1 -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">1. Kerjasama & Kekompakan Kelompok</label>
+                    <div class="star-rating flex items-center gap-2 text-2xl text-amber-400" id="starGroup1">
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup1', 1)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup1', 2)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup1', 3)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup1', 4)"></i>
+                        <i class="fa-regular fa-star" onclick="setRating('starGroup1', 5)"></i>
+                    </div>
+                    <span id="starGroup1-text" class="text-xs font-semibold text-slate-500 block">Sangat Baik (4/5)</span>
+                </div>
+
+                <!-- Rating 2 -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                    <label class="block text-xs font-bold text-slate-700">2. Keaktifan Mengamati di Luar Kelas</label>
+                    <div class="star-rating flex items-center gap-2 text-2xl text-amber-400" id="starGroup2">
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup2', 1)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup2', 2)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup2', 3)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup2', 4)"></i>
+                        <i class="fa-solid fa-star" onclick="setRating('starGroup2', 5)"></i>
+                    </div>
+                    <span id="starGroup2-text" class="text-xs font-semibold text-slate-500 block">Luar Biasa (5/5)</span>
+                </div>
+
+            </div>
+
+            <!-- Tanda Tangan / Persetujuan -->
+            <div class="pt-6 border-t border-slate-100 grid grid-cols-2 text-center text-xs text-slate-600">
+                <div>
+                    <p class="font-bold text-slate-800 mb-12">Ketua Kelompok,</p>
+                    <p class="font-semibold underline">( ____________________ )</p>
+                </div>
+                <div>
+                    <p class="font-bold text-slate-800 mb-12">Guru Pembimbing IPAS,</p>
+                    <p class="font-semibold underline">( ____________________ )</p>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- App JavaScript Logic -->
+    <script>
+        // Data Structures for Checklists
+        const defaultBiotik = [
+            { name: 'Rumput / Tanaman Hijau', count: 10, location: 'Taman Depan Kelas' },
+            { name: 'Bunga Sepatu / Kamboja', count: 3, location: 'Pot Bunga' },
+            { name: 'Semut Hitam / Merah', count: 25, location: 'Batang Pohon' },
+            { name: 'Kupu-kupu / Lebah', count: 2, location: 'Sekitar Bunga' },
+            { name: 'Burung Pipit', count: 4, location: 'Atap Sekolah' },
+            { name: 'Cacing Tanah', count: 5, location: 'Tanah Basah' }
+        ];
+
+        const defaultAbiotik = [
+            { name: 'Sinar Matahari', condition: 'Cerah & Cerah Panas', notes: 'Penerangan Utama' },
+            { name: 'Tanah Taman', condition: 'Subur & Agak Basah', notes: 'Tempat Tumbuh Tanaman' },
+            { name: 'Air Kelembapan', condition: 'Cukup Tersebar', notes: 'Penyiraman Rutin' },
+            { name: 'Udara / Angin', condition: 'Sejuk Berhembus', notes: 'Sirkulasi Baik' },
+            { name: 'Batu / Kerikil', condition: 'Kering Keras', notes: 'Hiasan Taman' }
+        ];
+
+        let ratings = { starGroup1: 4, starGroup2: 5 };
+        let activeMediaMode = { 1: 'draw', 2: 'draw' };
+        let photoDataUrls = { 1: '', 2: '' };
+        let currentJournalDocId = null;
+
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            initTables();
+            initCanvases();
+            loadSavedData();
+            setupAutoSave();
+        });
+
+        // Toggle media between Canvas Sketsa and Camera Photo
+        function switchMediaMode(id, mode) {
+            activeMediaMode[id] = mode;
+            const drawBox = document.getElementById(`drawContainer${id}`);
+            const photoBox = document.getElementById(`photoContainer${id}`);
+            const btnDraw = document.getElementById(`btnDrawMode${id}`);
+            const btnPhoto = document.getElementById(`btnPhotoMode${id}`);
+
+            if (mode === 'draw') {
+                drawBox.classList.remove('hidden');
+                photoBox.classList.add('hidden');
+                btnDraw.className = "px-2 py-1 rounded-md font-bold bg-white text-emerald-800 shadow-sm";
+                btnPhoto.className = "px-2 py-1 rounded-md font-bold text-slate-600";
+            } else {
+                drawBox.classList.add('hidden');
+                photoBox.classList.remove('hidden');
+                btnPhoto.className = "px-2 py-1 rounded-md font-bold bg-white text-emerald-800 shadow-sm";
+                btnDraw.className = "px-2 py-1 rounded-md font-bold text-slate-600";
+            }
+            saveData(false);
+        }
+
+        // Camera Upload & Image Compression for Base64 Web Storage
+        function handlePhotoUpload(id, event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Canvas compression to keep payload small for Firestore
+                    const canvas = document.createElement('canvas');
+                    const maxDim = 600;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxDim) {
+                            height *= maxDim / width;
+                            width = maxDim;
+                        }
+                    } else {
+                        if (height > maxDim) {
+                            width *= maxDim / height;
+                            height = maxDim;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                    photoDataUrls[id] = compressedBase64;
+                    
+                    const imgElem = document.getElementById(`photoPreview${id}`);
+                    const placeholder = document.getElementById(`photoPlaceholder${id}`);
+                    imgElem.src = compressedBase64;
+                    imgElem.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                    saveData(false);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function clearPhoto(id) {
+            photoDataUrls[id] = '';
+            const imgElem = document.getElementById(`photoPreview${id}`);
+            const placeholder = document.getElementById(`photoPlaceholder${id}`);
+            imgElem.src = '';
+            imgElem.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+            document.getElementById(`cameraInput${id}`).value = '';
+            saveData(false);
+        }
+
+        // Populate Tables
+        function initTables() {
+            const biotikBody = document.getElementById('biotikTableBody');
+            biotikBody.innerHTML = '';
+            defaultBiotik.forEach((item, index) => {
+                biotikBody.innerHTML += `
+                    <tr class="hover:bg-slate-50/80">
+                        <td class="p-2.5 text-center">
+                            <input type="checkbox" id="bio_check_${index}" checked class="w-4 h-4 accent-emerald-600 rounded">
+                        </td>
+                        <td class="p-2.5 font-medium text-slate-800">
+                            <input type="text" id="bio_name_${index}" value="${item.name}" class="w-full bg-transparent border-none">
+                        </td>
+                        <td class="p-2.5">
+                            <input type="number" id="bio_count_${index}" value="${item.count}" min="0" class="w-20 px-2 py-1 bg-slate-100 rounded text-center font-bold">
+                        </td>
+                        <td class="p-2.5">
+                            <input type="text" id="bio_loc_${index}" value="${item.location}" class="w-full bg-transparent border-b border-slate-200">
+                        </td>
+                    </tr>
+                `;
+            });
+
+            const abiotikBody = document.getElementById('abiotikTableBody');
+            abiotikBody.innerHTML = '';
+            defaultAbiotik.forEach((item, index) => {
+                abiotikBody.innerHTML += `
+                    <tr class="hover:bg-slate-50/80">
+                        <td class="p-2.5 text-center">
+                            <input type="checkbox" id="abio_check_${index}" checked class="w-4 h-4 accent-teal-600 rounded">
+                        </td>
+                        <td class="p-2.5 font-medium text-slate-800">
+                            <input type="text" id="abio_name_${index}" value="${item.name}" class="w-full bg-transparent border-none">
+                        </td>
+                        <td class="p-2.5">
+                            <input type="text" id="abio_cond_${index}" value="${item.condition}" class="w-full bg-transparent border-b border-slate-200">
+                        </td>
+                        <td class="p-2.5">
+                            <input type="text" id="abio_note_${index}" value="${item.notes}" class="w-full bg-transparent border-b border-slate-200">
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Canvas Sketch Drawing Pads Logic
+        let canvas1, ctx1, canvas2, ctx2;
+        let isDrawing1 = false, isDrawing2 = false;
+
+        function initCanvases() {
+            canvas1 = document.getElementById('canvas1');
+            ctx1 = canvas1.getContext('2d');
+            canvas2 = document.getElementById('canvas2');
+            ctx2 = canvas2.getContext('2d');
+
+            setupCanvasListeners(canvas1, ctx1, 1);
+            setupCanvasListeners(canvas2, ctx2, 2);
+        }
+
+        function setupCanvasListeners(canvas, ctx, id) {
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: (clientX - rect.left) * (canvas.width / rect.width),
+                    y: (clientY - rect.top) * (canvas.height / rect.height)
+                };
+            }
+
+            function startDraw(e) {
+                e.preventDefault();
+                if (id === 1) isDrawing1 = true;
+                if (id === 2) isDrawing2 = true;
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            }
+
+            function draw(e) {
+                const drawing = id === 1 ? isDrawing1 : isDrawing2;
+                if (!drawing) return;
+                e.preventDefault();
+                const pos = getPos(e);
+                const color = document.getElementById(`color${id}`).value;
+                const size = document.getElementById(`size${id}`).value;
+
+                ctx.strokeStyle = color;
+                ctx.lineWidth = size;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            }
+
+            function stopDraw() {
+                if (id === 1) isDrawing1 = false;
+                if (id === 2) isDrawing2 = false;
+                ctx.beginPath();
+                saveData(false);
+            }
+
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDraw);
+            canvas.addEventListener('mouseleave', stopDraw);
+
+            canvas.addEventListener('touchstart', startDraw, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stopDraw);
+        }
+
+        function clearCanvas(id) {
+            const canvas = document.getElementById(`canvas${id}`);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            saveData(false);
+        }
+
+        // Rating Star Interactive System
+        function setRating(groupId, val) {
+            ratings[groupId] = val;
+            const container = document.getElementById(groupId);
+            const stars = container.querySelectorAll('i');
+            
+            stars.forEach((star, idx) => {
+                if (idx < val) {
+                    star.className = 'fa-solid fa-star';
+                } else {
+                    star.className = 'fa-regular fa-star';
+                }
+            });
+
+            const textElem = document.getElementById(`${groupId}-text`);
+            const labelMap = {
+                1: 'Perlu Bimbingan (1/5)',
+                2: 'Cukup Baik (2/5)',
+                3: 'Baik (3/5)',
+                4: 'Sangat Baik (4/5)',
+                5: 'Luar Biasa (5/5)'
+            };
+            textElem.innerText = labelMap[val];
+            saveData(false);
+        }
+
+        // LocalStorage Save & Cloud Sync (Firebase Integration)
+        async function saveData(isExplicitCloudSave = false) {
+            if (!currentJournalDocId) {
+                currentJournalDocId = 'jurnal_' + Date.now();
+            }
+
+            const data = {
+                id: currentJournalDocId,
+                namaKelompok: document.getElementById('namaKelompok').value,
+                kelasFase: document.getElementById('kelasFase').value,
+                tanggalPengamatan: document.getElementById('tanggalPengamatan').value,
+                anggotaKelompok: document.getElementById('anggotaKelompok').value,
+                lokasiPengamatan: document.getElementById('lokasiPengamatan').value,
+                activeMediaMode: activeMediaMode,
+                photoDataUrls: photoDataUrls,
+                namaOrg1: document.getElementById('namaOrg1').value,
+                peranOrg1: document.getElementById('peranOrg1').value,
+                namaOrg2: document.getElementById('namaOrg2').value,
+                peranOrg2: document.getElementById('peranOrg2').value,
+                chainSun: document.getElementById('chainSun').value,
+                chainProd: document.getElementById('chainProd').value,
+                chainCons1: document.getElementById('chainCons1').value,
+                chainCons2: document.getElementById('chainCons2').value,
+                chainDecomp: document.getElementById('chainDecomp').value,
+                diskusi1: document.getElementById('diskusi1').value,
+                diskusi2: document.getElementById('diskusi2').value,
+                kesimpulanUtama: document.getElementById('kesimpulanUtama').value,
+                ratings: ratings,
+                canvas1: canvas1 ? canvas1.toDataURL() : '',
+                canvas2: canvas2 ? canvas2.toDataURL() : ''
+            };
+
+            // Save to LocalStorage first (Offline-first)
+            localStorage.setItem('lkpd_ipas_sd_data', JSON.stringify(data));
+            
+            const statusNode = document.getElementById('save-status');
+
+            if (isExplicitCloudSave) {
+                statusNode.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-amber-500"></i> Mengunggah ke Cloud...`;
+                if (window.saveJournalToCloud) {
+                    const res = await window.saveJournalToCloud(data);
+                    if (res) {
+                        statusNode.innerHTML = `<i class="fa-solid fa-cloud-check text-emerald-500"></i> Tersimpan di Firebase Cloud!`;
+                        alert("Jurnal pengamatan kelompok Anda telah berhasil diunggah ke Firestore Cloud!");
+                    } else {
+                        statusNode.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-rose-500"></i> Gagal Cloud (Tersimpan Lokal)`;
+                    }
+                }
+            } else {
+                statusNode.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-500"></i> Otomatis Tersimpan (Lokal)`;
+            }
+        }
+
+        function loadSavedData() {
+            const raw = localStorage.getItem('lkpd_ipas_sd_data');
+            if (!raw) return;
+            try {
+                const data = JSON.parse(raw);
+                if (data.id) currentJournalDocId = data.id;
+                document.getElementById('namaKelompok').value = data.namaKelompok || '';
+                document.getElementById('kelasFase').value = data.kelasFase || 'Kelas 4 / Fase B';
+                document.getElementById('tanggalPengamatan').value = data.tanggalPengamatan || '';
+                document.getElementById('anggotaKelompok').value = data.anggotaKelompok || '';
+                document.getElementById('lokasiPengamatan').value = data.lokasiPengamatan || '';
+                document.getElementById('namaOrg1').value = data.namaOrg1 || '';
+                document.getElementById('peranOrg1').value = data.peranOrg1 || 'Konsumen I (Pemakan Tumbuhan)';
+                document.getElementById('namaOrg2').value = data.namaOrg2 || '';
+                document.getElementById('peranOrg2').value = data.peranOrg2 || 'Konsumen II (Pemakan Daging)';
+                document.getElementById('chainSun').value = data.chainSun || 'Matahari';
+                document.getElementById('chainProd').value = data.chainProd || 'Rumput Hijau';
+                document.getElementById('chainCons1').value = data.chainCons1 || 'Belalang';
+                document.getElementById('chainCons2').value = data.chainCons2 || 'Burung Pipit';
+                document.getElementById('chainDecomp').value = data.chainDecomp || 'Cacing Tanah';
+                document.getElementById('diskusi1').value = data.diskusi1 || '';
+                document.getElementById('diskusi2').value = data.diskusi2 || '';
+                document.getElementById('kesimpulanUtama').value = data.kesimpulanUtama || '';
+
+                if (data.activeMediaMode) {
+                    switchMediaMode(1, data.activeMediaMode[1] || 'draw');
+                    switchMediaMode(2, data.activeMediaMode[2] || 'draw');
+                }
+
+                if (data.photoDataUrls) {
+                    photoDataUrls = data.photoDataUrls;
+                    [1, 2].forEach(id => {
+                        if (photoDataUrls[id]) {
+                            const imgElem = document.getElementById(`photoPreview${id}`);
+                            const placeholder = document.getElementById(`photoPlaceholder${id}`);
+                            imgElem.src = photoDataUrls[id];
+                            imgElem.classList.remove('hidden');
+                            placeholder.classList.add('hidden');
+                        }
+                    });
+                }
+
+                if (data.ratings) {
+                    if (data.ratings.starGroup1) setRating('starGroup1', data.ratings.starGroup1);
+                    if (data.ratings.starGroup2) setRating('starGroup2', data.ratings.starGroup2);
+                }
+
+                if (data.canvas1 && ctx1) {
+                    const img1 = new Image();
+                    img1.onload = () => ctx1.drawImage(img1, 0, 0);
+                    img1.src = data.canvas1;
+                }
+                if (data.canvas2 && ctx2) {
+                    const img2 = new Image();
+                    img2.onload = () => ctx2.drawImage(img2, 0, 0);
+                    img2.src = data.canvas2;
+                }
+            } catch (e) {
+                console.error('Error loading saved LKPD data', e);
+            }
+        }
+
+        // Teacher Dashboard Render Logic
+        window.renderTeacherDashboard = function(list) {
+            const listBody = document.getElementById('teacherDashboardList');
+            const countElem = document.getElementById('totalSubmissionCount');
+            if (!listBody) return;
+
+            countElem.innerText = list.length;
+            if (list.length === 0) {
+                listBody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Belum ada jurnal kelompok tersimpan.</td></tr>`;
+                return;
+            }
+
+            listBody.innerHTML = '';
+            list.forEach(item => {
+                const dateStr = item.updatedAt ? new Date(item.updatedAt).toLocaleString('id-ID') : '-';
+                listBody.innerHTML += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3 font-bold text-slate-800">${item.namaKelompok || 'Tanpa Nama'}</td>
+                        <td class="p-3">${item.kelasFase || '-'}</td>
+                        <td class="p-3 text-slate-600">${item.anggotaKelompok || '-'}</td>
+                        <td class="p-3 text-slate-400">${dateStr}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="loadJournalFromDashboard('${item.id}')" class="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 rounded font-bold text-xs">
+                                Buka & Nilai
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            window.cachedCloudJurnals = list;
+        };
+
+        window.loadJournalFromDashboard = function(docId) {
+            if (!window.cachedCloudJurnals) return;
+            const target = window.cachedCloudJurnals.find(j => j.id === docId);
+            if (!target) return;
+
+            localStorage.setItem('lkpd_ipas_sd_data', JSON.stringify(target));
+            loadSavedData();
+            closeDashboardModal();
+            alert(`Jurnal kelompok "${target.namaKelompok}" berhasil dimuat!`);
+        };
+
+        function openDashboardModal() {
+            document.getElementById('teacherDashboardModal').classList.remove('hidden');
+        }
+
+        function closeDashboardModal() {
+            document.getElementById('teacherDashboardModal').classList.add('hidden');
+        }
+
+        function setupAutoSave() {
+            const inputs = document.querySelectorAll('input, textarea, select');
+            inputs.forEach(input => {
+                input.addEventListener('input', () => saveData(false));
+            });
+        }
+
+        function resetForm() {
+            if (confirm('Apakah Anda yakin ingin mengosongkan seluruh isi LKPD? Data tersimpan akan dihapus.')) {
+                localStorage.removeItem('lkpd_ipas_sd_data');
+                location.reload();
+            }
+        }
+
+        // Export as HTML/Word Document Format
+        function exportWordDoc() {
+            const content = document.querySelector('main').innerHTML;
+            const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' "+
+                "xmlns:w='urn:schemas-microsoft-com:office:word' "+
+                "xmlns='http://www.w3.org/TR/REC-html40'>"+
+                "<head><meta charset='utf-8'><title>LKPD IPAS SD</title></head><body>";
+            const footer = "</body></html>";
+            const sourceHTML = header + content + footer;
+            
+            const blob = new Blob(['\ufeff', sourceHTML], {
+                type: 'application/msword'
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `LKPD_IPAS_FaseB_${document.getElementById('namaKelompok').value || 'Kelompok'}.doc`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
